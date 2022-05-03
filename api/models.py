@@ -43,3 +43,12 @@ class VehicleDetectionModel(BaseModel):
                 "Category": "SUV"
             }
         }
+
+    def to_alert(self) -> dict:
+        return dict(
+            year=self.year,
+            make=self.make,
+            model=self.model,
+            category=self.category,
+            created_at=self.created_at.isoformat()
+        )

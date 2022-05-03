@@ -1,73 +1,51 @@
 """
-TODO:
-Develop the following features:
-
-Integrate Swagger.
-Implement JWT for authentication.
-POST /users to create the users.
-Develop GET /detections endpoint to expose all detections indexed in the database you chose in Indexer Microservice:
-The response should be paginated. Use skip and limit as the pagination query params.
-Develop GET /stats to return vehicle counting per Make (group_by).
-Develop GET /alerts endpoint to receive the alerts in real-time:
-This endpoint should be an event stream.
-Develop a Kafka Consumer inside the API to consume the alerts and expose them through the /alerts event-stream endpoint.
-
-Decisions:
-- Use fastAPI
-- Use mongodb
-- Use swagger.
-- pytest for testing.
-
+API of vehicle detections solution
 """
 import asyncio
 import json
 import os
-import logging
 import time
-from typing import Optional, List
+from typing import List
 
+from aiokafka import AIOKafkaConsumer
 from fastapi import FastAPI, Body, status, HTTPException, Request
-from fastapi.responses import JSONResponse
-from fastapi.encoders import jsonable_encoder
-from fastapi.middleware.cors import CORSMiddleware
-from kafka import KafkaConsumer, errors
 from sse_starlette.sse import EventSourceResponse
 
 from models import VehicleDetectionModel
 from db import db
 
-STREAM_DELAY = 1
-RETRY_TIMEOUT = 15000  # millisecond
+PROJECT_NAME = "VehicleDetection"
 KAFKA_BROKER_URL = os.environ.get("KAFKA_BROKER_URL")
-DETECTIONS_TOPIC = os.environ.get("DETECTIONS_TOPIC")
-KAFKA_TIMEOUT = os.environ.get("KAFKA_TIMEOUT", 120)
+ALERTS_TOPIC = os.environ.get("ALERTS_TOPIC")
+KAFKA_TIMEOUT = int(os.environ.get("KAFKA_TIMEOUT", 120))
+ALERT_GROUP = os.environ.get("ALERT_GROUP", "alerts")
 
-app = FastAPI()
-
-
-def build_consumer():
-    try:
-        return KafkaConsumer(
-            DETECTIONS_TOPIC,
-            bootstrap_servers=[KAFKA_BROKER_URL],
-            auto_offset_reset='earliest',
-            enable_auto_commit=True,
-            value_deserializer=lambda value: json.loads(value.decode())
-        )
-    except errors.NoBrokersAvailable:
-        return None
+app = FastAPI(title=PROJECT_NAME)
 
 
 @app.on_event("startup")
 async def startup_event():
+    """We try to connect to kafka broker, before to start up api server"""
+    loop = asyncio.get_event_loop()
     must_end = time.time() + KAFKA_TIMEOUT
-    while (consumer := build_consumer()) is None and time.time() < must_end:
-        # waiting for kafka broker services
-        time.sleep(1)
-
-    if consumer is None:
-        logging.error("Timeout waiting for kafka broker. Exit!")
-        exit(1)
+    connected = False
+    while time.time() < must_end and not connected:
+        try:
+            _consumer = AIOKafkaConsumer(
+                ALERTS_TOPIC,
+                loop=loop,
+                bootstrap_servers=[KAFKA_BROKER_URL],
+                auto_offset_reset='earliest',
+                enable_auto_commit=True,
+                value_deserializer=lambda value: json.loads(value.decode())
+            )
+            await _consumer.start()
+            await _consumer.stop()
+            print("Connected to kafka broker!")
+            connected = True
+        except Exception as ex:
+            print("Unable to connect to kafka. Waiting...", ex, type(ex))
+            await asyncio.sleep(1)
 
 
 @app.get(
@@ -82,78 +60,32 @@ async def detections():
 
 @app.get('/alerts')
 async def alerts_stream(request: Request):
-    def new_messages():
-        # Add logic here to check for new messages
-        yield 'Hello World'
 
-    async def event_generator():
-        while True:
-            # If client closes connection, stop sending events
-            if await request.is_disconnected():
-                break
-            while (message := next(consumer)) is not None:
-                vehicle = VehicleDetectionModel(**message.value)
-                if vehicle.category.upper() == SUSPICIOUS_VEHICLE.upper():
-                    alert_producer.send(ALERTS_TOPIC, value=vehicle)
-                await db.vehicles.insert_one(vehicle.dict())
-            # Checks for new messages and return them to client if any
-            if new_messages():
+    async def event_generator(consumer):
+        try:
+            # Consume messages
+            async for msg in consumer:
+                # If client was closed the connection
+                if await request.is_disconnected():
+                    break
+                alert = VehicleDetectionModel(**msg.value)
                 yield {
-                        "event": "new_message",
-                        "id": "message_id",
-                        "retry": RETRY_TIMEOUT,
-                        "data": "message_content"
+                    "event": "new_alert",
+                    "data": alert.to_alert()
                 }
+        finally:
+            # Will leave consumer group; perform autocommit if enabled.
+            await consumer.stop()
 
-            await asyncio.sleep(STREAM_DELAY)
+    loop = asyncio.get_event_loop()
+    _consumer = AIOKafkaConsumer(
+        ALERTS_TOPIC,
+        loop=loop,
+        bootstrap_servers=[KAFKA_BROKER_URL],
+        auto_offset_reset='earliest',
+        enable_auto_commit=True,
+        value_deserializer=lambda value: json.loads(value.decode())
+    )
 
-    return EventSourceResponse(event_generator())
-#
-#
-# @app.get(
-#     "/{address}/{key}", response_description="Get a single item by key", response_model=ItemModel
-# )
-# async def show_item(address: str, key: str):
-#     if (wallet := await db["wallets"].find_one({"address": address})) is not None:
-#         if (item := next(filter(lambda i: i.get("key") == key, wallet.get("items", [])), None)) is not None:
-#             return item
-#         else:
-#             raise HTTPException(status_code=404, detail=f"Item {key} not found")
-#     raise HTTPException(status_code=404, detail=f"Wallet {address} not found")
-#
-#
-# @app.post("/", response_description="Add new wallet", response_model=WalletModel)
-# async def create_wallet(wallet: WalletModel = Body(...)):
-#     # TODO: check for existing wallet with same address
-#     _wallet = jsonable_encoder(wallet)
-#     _wallet = await db["wallets"].insert_one(_wallet)
-#     new_wallet = await db["wallets"].find_one({"_id": _wallet.inserted_id})
-#     return JSONResponse(status_code=status.HTTP_201_CREATED, content=new_wallet)
-#
-#
-# @app.put("/{address}", response_description="Update a wallet", response_model=WalletModel)
-# async def update_wallet(address: str, wallet: WalletModel = Body(...)):
-#     _wallet = {k: v for k, v in wallet.dict().items() if v is not None}
-#
-#     if len(_wallet) >= 1:
-#         update_result = await db["wallets"].update_one({"address": address}, {"$set": _wallet})
-#
-#         if update_result.modified_count == 1:
-#             if (
-#                 updated_wallet := await db["wallets"].find_one({"address": address})
-#             ) is not None:
-#                 return updated_wallet
-#
-#     if (existing_wallet := await db["wallets"].find_one({"address": address})) is not None:
-#         return existing_wallet
-#
-#     raise HTTPException(status_code=404, detail=f"Wallet {address} not found")
-#
-#
-# @app.post("/new", response_description="Create name for wallet", response_model=NameWalletModel)
-# async def create_name(name_wallet: NameWalletModel = Body(...)):
-#     # TODO: check for existing name wallet with same address
-#     _name = jsonable_encoder(name_wallet)
-#     _name = await db["names"].insert_one(_name)
-#     new_name = await db["names"].find_one({"_id": _name.inserted_id})
-#     return JSONResponse(status_code=status.HTTP_201_CREATED, content=new_name)
+    await _consumer.start()
+    return EventSourceResponse(event_generator(_consumer))
