@@ -53,8 +53,8 @@ async def startup_event():
     response_description="List all vehicles detections",
     response_model=List[VehicleDetectionModel]
 )
-async def detections():
-    data = await db["vehicles"].find().to_list(1000)
+async def detections(skip: int = 0, limit: int = 100):
+    data = await db["vehicles"].find().skip(skip).to_list(limit)
     return data
 
 

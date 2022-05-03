@@ -1,12 +1,13 @@
 TODO:
 - Implement JWT for authentication.
 - POST /users to create the users.
-- Develop GET /detections endpoint to expose all detections indexed in the database you chose in Indexer Microservice:
-- The response should be paginated. Use skip and limit as the pagination query params.
 - Develop GET /stats to return vehicle counting per Make (group_by).
+- Add testing
+- Re-structure app (folder app, core)
+
+DONE:
+- Develop GET /detections endpoint to expose all detections indexed in the database you chose in Indexer Microservice:
+    - The response should be paginated. Use skip and limit as the pagination query params.
 - Develop GET /alerts endpoint to receive the alerts in real-time:
     - This endpoint should be an event stream.
     - Develop a Kafka Consumer inside the API to consume the alerts and expose them through the /alerts event-stream endpoint.
-
-- Add testing
-- Re-structure app (folder app, core)
