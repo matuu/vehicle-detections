@@ -58,6 +58,26 @@ async def detections(skip: int = 0, limit: int = 100):
     return data
 
 
+@app.get(
+    "/stats",
+    response_description="Stats about vehicle detections group by Make field"
+)
+async def stats():
+    cursor = db["vehicles"].aggregate(
+        [{
+            "$group": {
+                "_id": "$make",
+                "count": {"$sum": 1}
+            }
+        }]
+    )
+    stats_data = list()
+
+    async for doc in cursor:
+        stats_data.append((doc['_id'], doc['count']))
+    return dict(sorted(stats_data))
+
+
 @app.get('/alerts')
 async def alerts_stream(request: Request):
 
