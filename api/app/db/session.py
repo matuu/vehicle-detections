@@ -3,7 +3,7 @@ import os
 import motor.motor_asyncio
 
 
-def get_mongodb_string():
+def _get_mongodb_string():
     username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
     password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
     url = os.getenv("MONGO_HOST", "mongo")
@@ -11,6 +11,9 @@ def get_mongodb_string():
     return f"mongodb://{username}:{password}@{url}:{port}/"
 
 
-mongo_client = motor.motor_asyncio.AsyncIOMotorClient(get_mongodb_string())
+def get_db():
+    db = mongo_client.detections
+    return db
 
-db = mongo_client.detections
+
+mongo_client = motor.motor_asyncio.AsyncIOMotorClient(_get_mongodb_string())
