@@ -4,7 +4,6 @@ API of vehicle detections solution
 import asyncio
 import json
 import logging
-import time
 from datetime import timedelta
 from typing import List
 
@@ -18,6 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.core.config import settings
 from app.auth import Token, authenticate_user, get_current_active_user, exists_username, create_user
 from app.core.security import create_access_token
+from app.core.utils import waiting_for_broker_startup
 from app.db.models import VehicleDetectionModel, UserCreationModel, BaseUserModel
 from app.db.session import get_db
 
@@ -30,25 +30,7 @@ app = FastAPI(title=settings.PROJECT_NAME)
 async def startup_event():
     """We try to connect to kafka broker, before to start up api server"""
     loop = asyncio.get_event_loop()
-    must_end = time.time() + settings.KAFKA_TIMEOUT
-    connected = False
-    while time.time() < must_end and not connected:
-        try:
-            _consumer = AIOKafkaConsumer(
-                settings.ALERTS_TOPIC,
-                loop=loop,
-                bootstrap_servers=[settings.KAFKA_BROKER_URL],
-                auto_offset_reset='earliest',
-                enable_auto_commit=True,
-                value_deserializer=lambda value: json.loads(value.decode())
-            )
-            await _consumer.start()
-            await _consumer.stop()
-            logger.info("Connected to kafka broker!")
-            connected = True
-        except Exception as ex:
-            logger.error("Unable to connect to kafka. Waiting...", ex, type(ex))
-            await asyncio.sleep(1)
+    await waiting_for_broker_startup(loop, settings.ALERTS_TOPIC, settings.KAFKA_BROKER_URL, settings.KAFKA_TIMEOUT)
 
 
 @app.post("/token", response_model=Token)
