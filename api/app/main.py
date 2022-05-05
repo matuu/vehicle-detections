@@ -2,34 +2,35 @@
 API of vehicle detections solution
 """
 import asyncio
-import json
 import logging
 from datetime import timedelta
 from typing import List
 
-from aiokafka import AIOKafkaConsumer
 from fastapi import Depends, FastAPI, HTTPException, status, Request, Body
-from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sse_starlette.sse import EventSourceResponse
 
-from app.core.config import settings
 from app.auth import Token, authenticate_user, get_current_active_user, exists_username, create_user
+from app.core.config import settings
+from app.core.kafka import KafkaConsumerBuilder, waiting_for_broker_startup
 from app.core.security import create_access_token
-from app.core.utils import waiting_for_broker_startup
 from app.db.models import VehicleDetectionModel, UserCreationModel, BaseUserModel
 from app.db.session import get_db
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.PROJECT_NAME)
+loop = asyncio.get_event_loop()
+
+alert_consumer = KafkaConsumerBuilder(loop, settings.KAFKA_BROKER_URL, settings.ALERTS_TOPIC)
 
 
 @app.on_event("startup")
 async def startup_event():
     """We try to connect to kafka broker, before to start up api server"""
-    loop = asyncio.get_event_loop()
+
     await waiting_for_broker_startup(loop, settings.ALERTS_TOPIC, settings.KAFKA_BROKER_URL, settings.KAFKA_TIMEOUT)
 
 
@@ -101,32 +102,21 @@ async def stats(token: str = Depends(get_current_active_user), db=Depends(get_db
 
 
 @app.get('/alerts')
-async def alerts_stream(request: Request, token: str = Depends(get_current_active_user)):
+async def alerts_stream(
+        request: Request,
+        consumer: Depends(alert_consumer),
+        token: str = Depends(get_current_active_user)):
 
     async def event_generator():
-        try:
-            # Consume messages
-            async for msg in _consumer:
-                # If client was closed the connection
-                if await request.is_disconnected():
-                    break
-                alert = VehicleDetectionModel(**msg.value)
-                yield {
-                    "event": "new_alert",
-                    "data": alert.to_alert()
-                }
-        finally:
-            await _consumer.stop()
+        # Consume messages
+        async for msg in consumer:
+            # If client was closed the connection
+            if await request.is_disconnected():
+                break
+            alert = VehicleDetectionModel(**msg.value)
+            yield {
+                "event": "new_alert",
+                "data": alert.to_alert()
+            }
 
-    loop = asyncio.get_event_loop()
-    _consumer = AIOKafkaConsumer(
-        settings.ALERTS_TOPIC,
-        loop=loop,
-        bootstrap_servers=[settings.KAFKA_BROKER_URL],
-        auto_offset_reset='earliest',
-        enable_auto_commit=True,
-        value_deserializer=lambda value: json.loads(value.decode())
-    )
-
-    await _consumer.start()
     return EventSourceResponse(event_generator())
