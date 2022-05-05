@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from bson import ObjectId
 from pydantic import BaseModel, Field
@@ -52,3 +53,49 @@ class VehicleDetectionModel(BaseModel):
             category=self.category,
             created_at=self.created_at.isoformat()
         )
+
+
+class BaseUserModel(BaseModel):
+    """
+    This model contains user's information
+    """
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    disabled: Optional[bool] = False
+
+
+class UserCreationModel(BaseUserModel):
+    password: str
+
+    class Config:
+        allow_population_by_field_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
+        schema_extra = {
+            "example": {
+                "username": "johndoe",
+                "password": "secret",
+                "email": "hi@johndoe.com",
+                "full_name": "John Doe"
+            }
+        }
+
+
+class UserInDB(BaseUserModel):
+    password_hash: str
+
+    class Config:
+        allow_population_by_field_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
+        schema_extra = {
+            "example": {
+                "username": "johndoe",
+                "password": "secret",
+                "email": "hi@johndoe.com",
+                "full_name": "John Doe",
+                "disabled": False
+            }
+        }

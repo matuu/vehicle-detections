@@ -6,5 +6,5 @@ RUN pip install -r /usr/app/requirements.txt
 WORKDIR /usr/app
 COPY . .
 
-CMD  ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0"]
+CMD  ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0"]
 
