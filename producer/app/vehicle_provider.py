@@ -1,5 +1,7 @@
 from random import choice
+
 from faker.providers import BaseProvider
+
 from vehicle_dict import vehicles
 
 

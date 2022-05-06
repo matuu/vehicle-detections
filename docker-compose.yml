@@ -38,29 +38,22 @@ services:
 
   producer:
     build: ./producer
-    depends_on:
-      - broker
     volumes:
-      - ./producer/:/usr/app
+      - ./producer/:/usr/src
     env_file:
       - ./producer/.env
 
   indexer:
     build: ./indexer
-    depends_on:
-      - mongo
-      - broker
     volumes:
-      - ./indexer/:/usr/app
+      - ./indexer/:/usr/src
     env_file:
       - ./indexer/.env
 
   api:
     build: ./api
     command: uvicorn app.main:app --reload --workers 1 --host 0.0.0.0 --port 8000
-    depends_on:
-      - broker
-      - mongo
+
     ports:
       - "8000:8000"
     links:

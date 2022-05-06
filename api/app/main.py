@@ -6,6 +6,7 @@ import logging
 from datetime import timedelta
 from typing import List
 
+from aiokafka import AIOKafkaConsumer
 from fastapi import Depends, FastAPI, HTTPException, status, Request, Body
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -30,7 +31,6 @@ alert_consumer = KafkaConsumerBuilder(loop, settings.KAFKA_BROKER_URL, settings.
 @app.on_event("startup")
 async def startup_event():
     """We try to connect to kafka broker, before to start up api server"""
-
     await waiting_for_broker_startup(loop, settings.ALERTS_TOPIC, settings.KAFKA_BROKER_URL, settings.KAFKA_TIMEOUT)
 
 
@@ -69,7 +69,7 @@ async def read_users_me(current_user: BaseUserModel = Depends(get_current_active
 
 @app.get(
     "/detections",
-    response_description="List all vehicles detections",
+    response_description="List all mocks detections",
     response_model=List[VehicleDetectionModel]
 )
 async def detections(
@@ -104,7 +104,7 @@ async def stats(token: str = Depends(get_current_active_user), db=Depends(get_db
 @app.get('/alerts')
 async def alerts_stream(
         request: Request,
-        consumer: Depends(alert_consumer),
+        consumer: AIOKafkaConsumer = Depends(alert_consumer),
         token: str = Depends(get_current_active_user)):
 
     async def event_generator():
