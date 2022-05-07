@@ -1,5 +1,6 @@
 TODO:
 - Add testing
+- Improve docs
 
 DONE:
 - Develop GET /detections endpoint to expose all detections indexed in the database you chose in Indexer Microservice:

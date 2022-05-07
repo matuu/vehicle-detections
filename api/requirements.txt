@@ -3,7 +3,7 @@ uvicorn[standard]
 motor==2.5.1
 pydantic==1.9.0
 pymongo==3.12.3
-sse-starlette
-aiokafka
+sse-starlette==0.10.3
+aiokafka==0.7.2
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4

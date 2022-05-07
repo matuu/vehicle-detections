@@ -1,2 +1,2 @@
 Faker==4.0.3
-aiokafka
+aiokafka==0.7.2

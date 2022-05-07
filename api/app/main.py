@@ -15,7 +15,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.auth import Token, authenticate_user, get_current_active_user, exists_username, create_user
 from app.core.config import settings
-from app.core.kafka import KafkaConsumerBuilder, waiting_for_broker_startup
+from app.core.kafka import KafkaConsumerInjector, waiting_for_broker_startup
 from app.core.security import create_access_token
 from app.db.models import VehicleDetectionModel, UserCreationModel, BaseUserModel
 from app.db.session import get_db
@@ -25,13 +25,13 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title=settings.PROJECT_NAME)
 loop = asyncio.get_event_loop()
 
-alert_consumer = KafkaConsumerBuilder(loop, settings.KAFKA_BROKER_URL, settings.ALERTS_TOPIC)
+alert_consumer = KafkaConsumerInjector(loop, settings.KAFKA_BROKER_URL, settings.ALERTS_TOPIC)
 
 
 @app.on_event("startup")
 async def startup_event():
     """We try to connect to kafka broker, before to start up api server"""
-    await waiting_for_broker_startup(loop, settings.ALERTS_TOPIC, settings.KAFKA_BROKER_URL, settings.KAFKA_TIMEOUT)
+    await waiting_for_broker_startup(loop, settings.KAFKA_BROKER_URL, int(settings.KAFKA_TIMEOUT))
 
 
 @app.post("/token", response_model=Token)
@@ -113,10 +113,13 @@ async def alerts_stream(
             # If client was closed the connection
             if await request.is_disconnected():
                 break
-            alert = VehicleDetectionModel(**msg.value)
-            yield {
-                "event": "new_alert",
-                "data": alert.to_alert()
-            }
+            try:
+                alert = VehicleDetectionModel(**msg.value)
+                yield {
+                    "event": "new_alert",
+                    "data": alert.to_alert()
+                }
+            except ValueError:
+                logger.exception("Error parsing message")
 
     return EventSourceResponse(event_generator())

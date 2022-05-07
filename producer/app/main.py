@@ -14,7 +14,7 @@ async def main(event_loop, _faker):
     await waiting_for_broker_startup(
         event_loop,
         settings.KAFKA_BROKER_URL,
-        settings.KAFKA_TIMEOUT)
+        int(settings.KAFKA_TIMEOUT))
 
     async with KafkaProducerBuilder(event_loop, settings.KAFKA_BROKER_URL) as producer:
         while True:
