@@ -6,49 +6,47 @@
 
 ## Description
 
-This challenge should be fully containerised, and it must be uploaded to a repository with its respective README.md with the deployment instructions.
+This challenge is fully containerised (you will need [Docker](https://docs.docker.com/install/) and [Docker Compose](https://docs.docker.com/compose/) to run it). 
 
-You will need [Docker](https://docs.docker.com/install/) and [Docker Compose](https://docs.docker.com/compose/) to run it.
+By running `docker-compose up --build` to start up all services.
 
-You simply need to create a Docker network called `intellisite` to enable communication between the Kafka broker and all microservices.
+The challenge consist in building two microservices, that they are connected through the broker. It have been decided use the following stack for development:
 
-The challenge consist in building two microservices, that they are connected through the broker:
+- All microservices are asynchronous using `asyncio`.
+- For database storage it uses MongoDB.
+- For API application, it uses fastAPI framework.
 
 ## Indexer Microservice
 
-This microservice should be a Kafka Consumer/Producer. It should have to consume messages (vehicle detections) from the topic called `intellisite.detections`, index the messages in a database (free election) and generate alerts based on vehicle category filtering by `SUSPICIOUS_VEHICLE` env var (Example: `SUV` category). These alerts should be injected in the topic called `intellisite.alerts`.
+This microservice is a Kafka Consumer/Producer. It consumes messages (vehicle detections) from the topic called `intellisite.detections`, indexes the messages in a MongoDB database and generates alerts based on vehicle category filtering by `SUSPICIOUS_VEHICLE` env var (Example: `SUV` category). These alerts are injected in the topic called `intellisite.alerts`.
 
 ## Detections API
-Develop the following features:
+This API is a microservice developed with FastAPI framework and has the following features:
 - Integrate Swagger.
 - Implement JWT for authentication.
 - POST /users to create the users.
-- Develop GET /detections endpoint to expose all detections indexed in the database you chose in Indexer Microservice:
-    - The response should be paginated. Use skip and limit as the pagination query params.
-- Develop GET /stats to return vehicle counting per Make (group_by).
-- Develop GET /alerts endpoint to receive the alerts in real-time:
-    - This endpoint should be an event stream.
-    - Develop a Kafka Consumer inside the API to consume the alerts and expose them through the /alerts event-stream endpoint.
+- GET /detections endpoint to expose all detections indexed in the MongoDB database:
+    - The response is paginated. Use skip and limit as the pagination query params.
+- GET /stats to return vehicle counting per Make (group_by).
+- GET /alerts endpoint to receive the alerts in real-time:
+    - This endpoint is an event stream.
+    - A Kafka Consumer inside the API consumes the alerts and expose them through this event-stream endpoint.
 
-## Producer Setup
+## Project Setup
 
-- Spin up the local single-node Kafka cluster (will run in the background):
-
-```bash
-$ docker-compose -f docker/docker-compose.kafka.yml up -d
-```
-
-- Check the cluster is up and running (wait for "started" to show up):
+- Spin up all services by running:
 
 ```bash
-$ docker-compose -f docker/docker-compose.kafka.yml logs -f broker | grep "started"
+$ docker-compose up -d
 ```
 
-- Start the detections producer (will run in the background):
+It'll start up:
 
-```bash
-$ docker-compose -f docker/docker-compose.producer.yml up -d
-```
+- Kafka broker and zookeeper.
+- KafDrop: a web UI for viewing kafka topics and message. See http://localhost:9000
+- Producer: an async app for producing fake vehicle detection events.
+- Indexer: an async app that listening the topic for vehicle detection events and store them and alert when find a kind of vehicle specified
+- API: a fastAPI app with several endpoints specified above. It runs on http://localhost:8000 (API documentation on `/docs`)
 
 ## How to watch the broker messages
 
@@ -58,6 +56,8 @@ Show a stream of detections in the topic `intellisite.detections` (optionally ad
 $ docker-compose -f docker/docker-compose.kafka.yml exec broker kafka-console-consumer --bootstrap-server localhost:9092 --topic intellisite.detections
 ```
 
+Also, you can use KafDrop in http://localhost:9000/.
+
 Topics:
 
 - `intellisite.detections`: raw generated detections
@@ -66,25 +66,58 @@ Topics:
 Examples detection message:
 
 ```json
-{'Year': 2011, 'Make': 'Toyota', 'Model': 'Land Cruiser', 'Category': 'SUV'}
+{
+   "year": 1999,
+   "make": "Cadillac",
+   "model": "Escalade",
+   "category": "SUV",
+   "created_at": "2022-05-07T04:51:08.381523"
+}
 ```
 
-## Teardown
+## How to check event-stream `/alerts` endpoint
 
-To stop the detections producer:
+First, you need a valid user:
 
 ```bash
-$ docker-compose -f docker/docker-compose.producer.yml down
+curl -X 'POST' \
+  'http://localhost:8000/users' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "username": "matuu",
+  "password": "123456",
+  "email": "hi@matuu.dev",
+  "full_name": "Matu Varela"
+}'
 ```
 
-To stop the Kafka cluster (use `down`  instead to also remove contents of the topics):
+Now, you need a JWT token to interact with the API:
 
 ```bash
-$ docker-compose -f docker-compose.kafka.yml stop
+curl -X 'POST' \
+  'http://localhost:8000/token' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'grant_type=&username=matuu&password=123456&scope=&client_id=&client_secret='
 ```
 
-To remove the Docker network:
+It'll return a valid token like:
 
 ```bash
-$ docker network rm intelliste
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtYXR1dSIsImV4cCI6MTY1MTkwNDA2N30.GQKzLibrURtZqeFT1eDVSzVAz-qJW5FHp3eTKXn5zO4",
+  "token_type": "bearer"
+}
 ```
+
+With this token, you can request alerts in real-time:
+
+```bash
+curl -X 'GET' \
+  'http://localhost:8000/stats' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtYXR1dSIsImV4cCI6MTY1MTkwNDA2N30.GQKzLibrURtZqeFT1eDVSzVAz-qJW5FHp3eTKXn5zO4'
+```
+
+**Note: this endpoint don't work well in Swagger
