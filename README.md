@@ -115,9 +115,12 @@ With this token, you can request alerts in real-time:
 
 ```bash
 curl -X 'GET' \
-  'http://localhost:8000/stats' \
+  'http://localhost:8000/alerts' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtYXR1dSIsImV4cCI6MTY1MTkwNDA2N30.GQKzLibrURtZqeFT1eDVSzVAz-qJW5FHp3eTKXn5zO4'
 ```
 
-**Note: this endpoint don't work well in Swagger
+
+![event-stream](docs/imgs/event-stream-endpoint.gif)
+
+**Note: this endpoint doesn't work well in Swagger
